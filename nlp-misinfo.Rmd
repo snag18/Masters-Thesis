@@ -1,0 +1,167 @@
+---
+title: "VADER Sentiment Analysis of Twitter Misinformation Data "
+output: html_document
+---
+
+```{python}
+pip install vaderSentiment
+pip install wordcloud
+
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+import numpy as np
+import pandas as pd
+import nltk
+import typing
+import matplotlib.pyplot as plt
+nltk.download('stopwords')
+nltk.download('wordnet')
+```
+
+```{python}
+misinfo_df = pd.read_csv('032020_tweets.csv')
+misinfo_df.head()
+```
+
+```{python}
+tweets = misinfo_df.tweet_text
+print(tweets)
+
+profile = misinfo_df.user_profile_description
+```
+
+```{python}
+analyzer = SentimentIntensityAnalyzer()
+for tweet in tweets:
+    scores = analyzer.polarity_scores(tweet)
+```
+
+```{python}
+misinfo_data = pd.read_csv('032020_tweets.csv', header = None)
+```
+
+```{python}
+from nltk.corpus import stopwords
+stopcorpus: typing.List = stopwords.words('english')
+```
+
+```{python}
+def get_sentiment(text:str, analyzer,desired_type:str='pos'):
+    sentiment_score = analyzer.polarity_scores(text)
+    return sentiment_score[desired_type]
+  
+def get_sentiment_scores(df,data_column):
+    df[f'{data_column} Positive Sentiment Score'] = df[data_column].astype(str).apply(lambda x: get_sentiment(x,analyzer,'pos'))
+    df[f'{data_column} Negative Sentiment Score'] = df[data_column].astype(str).apply(lambda x: get_sentiment(x,analyzer,'neg'))
+    df[f'{data_column} Neutral Sentiment Score'] = df[data_column].astype(str).apply(lambda x: get_sentiment(x,analyzer,'neu'))
+    df[f'{data_column} Compound Sentiment Score'] = df[data_column].astype(str).apply(lambda x: get_sentiment(x,analyzer,'compound'))
+    return df
+```
+
+```{python}
+misinfo_sentiment = get_sentiment_scores(misinfo_data,2)
+```
+
+```{python}
+def print_top_n_reviews(df,data_column,number_of_rows):
+    for index,row in df.nlargest(number_of_rows,data_column).iterrows():
+        print(f"Score: {row[data_column]}, Review: {row[0]}")
+
+print_top_n_reviews(misinfo_sentiment,'0 Positive Sentiment Score',10)
+
+print_top_n_reviews(misinfo_sentiment,'0 Negative Sentiment Score',10)
+
+print_top_n_reviews(misinfo_sentiment,'0 Neutral Sentiment Score',10)
+
+print_top_n_reviews(misinfo_sentiment,'0 Compound Sentiment Score',10)
+
+```
+
+```{python}
+def remove_links(text):
+    # Remove any hyperlinks that may be in the text starting with http
+    import re
+    return re.sub(r"http\S+", "", text)
+
+def style_text(text:str):
+    # Convert to lowercase
+    return text.lower()
+
+def remove_words(text_data:str,list_of_words_to_remove: typing.List):
+    # Remove all words as specified in a custom list of words
+    return [item for item in text_data if item not in list_of_words_to_remove]
+
+def collapse_list_to_string(string_list):
+    # This is to join back together the text data into a single string
+    return ' '.join(string_list)
+
+def remove_apostrophes(text):
+    # Remove any apostrophes as these are irrelavent in our word cloud
+    text = text.replace("'", "")
+    text = text.replace('"', "")
+    text = text.replace('`', "")
+    return text
+
+misinfo_data = pd.read_csv('032020_tweets.csv', header = None)
+
+misinfo_data['cleaned_text'] = misinfo_data[0].astype(str).apply(remove_links)
+
+misinfo_data['cleaned_text'] = misinfo_data['cleaned_text'].astype(str).apply(style_text)
+
+misinfo_data['cleaned_text'] = misinfo_data['cleaned_text'].astype(str).apply(lambda x: remove_words(x.split(),stopcorpus))
+
+misinfo_data['cleaned_text'] = misinfo_data['cleaned_text'].apply(collapse_list_to_string)
+
+misinfo_data['cleaned_text'] = misinfo_data['cleaned_text'].apply(remove_apostrophes)
+
+```
+
+```{python}
+w_tokenizer = nltk.tokenize.WhitespaceTokenizer()
+lemmatizer = nltk.stem.WordNetLemmatizer()
+
+def lemmatize_text(text):
+    return [lemmatizer.lemmatize(w) for w in w_tokenizer.tokenize(text)]
+
+misinfo_data['clean_lemmatized'] = misinfo_data['cleaned_text'].astype(str).apply(lemmatize_text)
+
+misinfo_data['clean_lemmatized'] = misinfo_data['clean_lemmatized'].apply(collapse_list_to_string)
+
+```
+
+```{python}
+def plot_wordcloud(series,output_filename='wordcloud'):
+
+    from wordcloud import WordCloud
+
+    wordcloud = WordCloud().generate(' '.join(series.astype(str)))
+
+    wordcloud.to_file(output_filename + '.png')
+
+    plt.imshow(wordcloud, interpolation='bilinear')
+
+    plt.axis("off")
+
+plot_wordcloud(misinfo_data['clean_lemmatized'],'overall-wordcloud')
+```
+
+```{python}
+def plot_wordcloud_top_n(df,number_of_reviews,score_column,data_column,output_filename):
+    sliced_df = df.nlargest(number_of_reviews,score_column)
+
+    plot_wordcloud(sliced_df[data_column],output_filename)
+    
+plot_wordcloud_top_n(misinfo_data,500,'0 Positive Sentiment Score','clean_lemmatized','positive-wordcloud')
+```
+
+```{python}
+plot_wordcloud_top_n(misinfo_data,500,'0 Negative Sentiment Score','clean_lemmatized','negative-wordcloud')
+```
+
+```{python}
+plot_wordcloud_top_n(misinfo_data,500,'0 Neutral Sentiment Score','clean_lemmatized','neutral-wordcloud')
+```
+
+Here, the positive sentiment is expressed by words such as jokes, well, nice, lovely, sure, interesting - these words generally have a positive or neutral connotation. The word cloud reveals more words such as love, dear, true, good, pious, great which are evidently positive.
+To express negative sentiments in tweets, words such as horror, sad, sickening, scary, tragic, terrible are used. These words fall on the extreme end of negative sentiments but go along with negative sentiments expressed in fake news. The fire emoji is also analyzed as negative while in everyday slang it signifies praise rather than negativity. Words such as sad, racism and racist make more sense here.¶
+Mostly, emojis and hashtags signify a neutral sentiment, though the heart emojis can also symbolize positivity while words associated with LGBTQ and blackness can be associated with positive or negative political occurences.
+
