@@ -1,0 +1,512 @@
+---
+title: "Bayesian Regression Analysis and Prediction of Democracy, Polarization and Disinformation Variables from V-Dem and DSP Datasets"
+output:
+  html_document: default
+  pdf_document: default
+  always_allow_html: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r message=FALSE, warning=FALSE, error=FALSE, results='hide'}
+library(rmarkdown)
+library(tinytex)
+library(rstan)
+library(rstanarm)
+library(plotly)
+library(ggplot2)
+library(tidyverse)
+library(dplyr)
+library(tidybayes)
+library(broom.mixed)
+library(modelsummary)
+options(mc.cores = parallel::detectCores())
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# datasets
+vdem_main <- read.csv("V-Dem-CY-Full+Others-v12.csv")
+dsp_main <- read.csv("DSP-Dataset-v2.csv")
+
+#filtering 
+vdem <- vdem_main %>%
+  filter(country_name %in% c("Brazil", "Chile", "Egypt", "Germany", "Hungary", "India", "Poland", "Saudi Arabia", "Sri Lanka", "Turkey", "Sweden", "United Kingdom", "United States of America")) %>%
+  filter(year %in% c(2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019)) %>%
+  select(country_name, year, v2x_regime, v2cacamps)
+
+dsp <- dsp_main %>%
+  filter(country_name %in% c("Brazil", "Chile", "Egypt", "Germany", "Hungary", "India", "Poland", "Saudi Arabia", "Sri Lanka", "Turkey", "Sweden", "United Kingdom", "United States of America")) %>%
+  filter(year %in% c(2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019)) %>%
+  select(country_name, year, v2smpolsoc, v2smpolhate, v2smgovdom, v2smpardom)
+  
+country <- vdem$country_name
+id <- vdem$country_id
+year <- vdem$year
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+RoW <- vdem$v2x_regime # Regimes of the World - 0 Closed Autocracy, 1 Electoral Autocracy, 2 Electoral Democracy, 3 Liberal Democracy
+polpl <- vdem$v2cacamps #Political polarization
+```
+
+```{r message=FALSE, echo=FALSE, warning=FALSE, error=FALSE}
+polsoc <- dsp$v2smpolsoc # Polarization of Society
+polhs <- dsp$v2smpolhate # Political Parties Hate Speech
+
+disgov <- dsp$v2smgovdom # Government dissemination of false information domestic
+disparty <- dsp$v2smpardom # Party dissemination of false information domestic
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# summary statistics of all 6 variables
+summary(vdem)
+summary(dsp) 
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# Countries in Specific Regimes
+
+fig1 <- vdem %>%
+  ggplot(aes(RoW, country, col = country, size = RoW, label = country)) +
+  geom_point() +
+  facet_grid(. ~ year) +
+  labs(x = "Regimes", y = "Country")
+
+country_regimes <- ggplotly(fig1, height = 900, width = 900) %>%
+  animation_opts(frame = 100,
+                 easing = "linear",
+                 redraw = FALSE)
+country_regimes
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# Political Polarization
+fig2 <- vdem %>%
+  ggplot(aes(polpl, country, col = country, size = polpl, label = country)) +
+  geom_point() +
+  facet_grid(. ~ year) +
+  labs(x = "Polarization", y = "Country")
+
+country_pol <- ggplotly(fig2, height = 900, width = 900) %>%
+  animation_opts(frame = 100,
+                 easing = "linear",
+                 redraw = FALSE)
+country_pol
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# Political Polarization in Specific Regimes
+fig3 <- vdem %>%
+  ggplot(aes(RoW, polpl, col = country, size = RoW, label = country)) +
+  geom_point() +
+  facet_grid(. ~ year) +
+  labs(x = "Regimes", y = "Polarization")
+
+regime_pol <- ggplotly(fig3, height = 900, width = 900) %>%
+  animation_opts(frame = 100,
+                 easing = "linear",
+                 redraw = FALSE)
+regime_pol
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# Societal Polarization in Countries
+fig4 <- dsp %>%
+  ggplot(aes(polsoc, country, col = country, size = polsoc, label = country)) +
+  geom_point() +
+  facet_grid(. ~ year) +
+  labs(x = "Polarization", y = "Country")
+
+polarization <- ggplotly(fig4, height = 900, width = 900) %>%
+  animation_opts(frame = 100,
+                 easing = "linear",
+                 redraw = FALSE)
+polarization
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# Hate Speech in Countries
+fig5 <- dsp %>%
+  ggplot(aes(polhs, country, col = country, size = polhs, label = country)) +
+  geom_point() +
+  facet_grid(. ~ year) +
+  labs(x = "Hate Speech", y = "Country")
+
+hate_speech <- ggplotly(fig5, height = 900, width = 900) %>%
+  animation_opts(frame = 100,
+                 easing = "linear",
+                 redraw = FALSE)
+hate_speech
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# Government Disinformation
+fig6 <- dsp %>%
+  ggplot(aes(disgov, country, col = country, size = disgov, label = country)) +
+  geom_point() +
+  facet_grid(. ~ year) +
+  labs(x = "Government Disinformation", y = "Country")
+
+gov_disinfo <- ggplotly(fig6, height = 900, width = 900) %>%
+  animation_opts(frame = 100,
+                 easing = "linear",
+                 redraw = FALSE)
+gov_disinfo
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# Party Disinformation
+fig7 <- dsp %>%
+  ggplot(aes(disparty, country, col = country, size = disparty, label = country)) +
+  geom_point() +
+  facet_grid(. ~ year) +
+  labs(x = "Party Disinformation", y = "Country")
+
+par_disinfo <- ggplotly(fig7, height = 900, width = 900) %>%
+  animation_opts(frame = 100,
+                 easing = "linear",
+                 redraw = FALSE)
+par_disinfo
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# Societal Polarization and Hate Speech
+fig8 <- dsp %>%
+  ggplot(aes(polsoc, polhs, col = country, size = polsoc, label = country)) +
+  geom_point() +
+  facet_grid(. ~ year) +
+  labs(x = "Polarization", y = "Hate Speech")
+
+pol_hate <- ggplotly(fig8, height = 900, width = 900) %>%
+  animation_opts(frame = 100,
+                 easing = "linear",
+                 redraw = FALSE)
+pol_hate
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# Societal Polarization and Government Disinformation
+fig9 <- dsp %>%
+  ggplot(aes(polsoc, disgov, col = country, size = polsoc, label = country)) +
+  geom_point() +
+  facet_grid(. ~ year) +
+  labs(x = "Polarization", y = "Government Disinformation")
+
+pol_gov_disinfo <- ggplotly(fig9, height = 900, width = 900) %>%
+  animation_opts(frame = 100,
+                 easing = "linear",
+                 redraw = FALSE)
+pol_gov_disinfo
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# Societal Polarization and Party Disinformation
+fig10<- dsp %>%
+  ggplot(aes(polsoc, disparty, col = country, size = polsoc, label = country)) +
+  geom_point() +
+  facet_grid(. ~ year) +
+  labs(x = "Polarization", y = "Party Disinformation")
+
+pol_par_disinfo <- ggplotly(fig10, height = 900, width = 900) %>%
+  animation_opts(frame = 100,
+                 easing = "linear",
+                 redraw = FALSE)
+pol_par_disinfo
+```
+
+Bayesian Regression and Inference with Multilevel Models
+
+Political Polarization and World Regimes
+
+```{r results='hide'}
+lm1 <- stan_glm(RoW ~ polpl, vdem, family = gaussian)
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# Political Polarization is more in Electoral Autocracies and the Democracies
+summary(lm1)
+
+tidy_coef <- tidy(lm1)
+model_intercept1 <- tidy_coef$estimate[1]
+model_slope1 <- tidy_coef$estimate[2]
+draws1 <- spread_draws(lm1, `(Intercept)`, polpl)
+
+fig11 <- ggplot(vdem, aes(x = RoW, y = polpl)) +
+  labs(x = "Regimes", y = "Polarization") +
+  geom_point() +
+  geom_abline(data = draws1, aes(intercept = `(Intercept)`, slope = polpl),    
+              size = 0.2, alpha = 0.1, color = "red") +  
+  geom_abline(intercept = model_intercept1, slope = model_slope1)
+fig11
+```
+
+```{r results='hide'}
+lm2 <- stan_glm(RoW ~ polpl + factor(country), vdem, family = gaussian)
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# with country
+summary(lm2)
+
+tidy_coef <- tidy(lm2)
+model_intercept2 <- tidy_coef$estimate[1]
+model_slope2 <- tidy_coef$estimate[2]
+draws2 <- spread_draws(lm2, `(Intercept)`, polpl)
+
+fig12 <- ggplot(vdem, aes(x = RoW, y = polpl)) +
+  labs(x = "Regimes", y = "Polarization") +
+  geom_point() +
+  geom_abline(data = draws2, aes(intercept = `(Intercept)`, slope = polpl),    
+              size = 0.2, alpha = 0.1, color = "red") +  
+  geom_abline(intercept = model_intercept2, slope = model_slope2)
+fig12
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# compare both models
+loo1 <- loo(lm1)
+loo2 <- loo(lm2)
+loo_compare(loo1, loo2)
+# lm2 is better due to factorizing by country 
+```
+
+Societal Polarization and Hate Speech
+
+```{r results='hide'}
+lm3 <- stan_glm(polsoc ~ polhs, dsp, family = gaussian)
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# Societal Polarization and Hate Speech move in the same direction
+summary(lm3)
+
+tidy_coef <- tidy(lm3)
+model_intercept3 <- tidy_coef$estimate[1]
+model_slope3 <- tidy_coef$estimate[2]
+draws3 <- spread_draws(lm3, `(Intercept)`, polhs)
+
+fig13 <- ggplot(dsp, aes(x = polsoc, y = polhs)) +
+  labs(x = "Polarization", y = "Hate Speech") +
+  geom_point() +
+  geom_abline(data = draws3, aes(intercept = `(Intercept)`, slope = polhs),    
+              size = 0.2, alpha = 0.1, color = "red") +  
+  geom_abline(intercept = model_intercept3, slope = model_slope3)
+fig13
+```
+
+```{r results='hide'}
+lm4 <- stan_glm(polsoc ~ polhs + factor(country), dsp, family = gaussian)
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+summary(lm4)
+
+tidy_coef <- tidy(lm4)
+model_intercept4 <- tidy_coef$estimate[1]
+model_slope4 <- tidy_coef$estimate[2]
+draws4 <- spread_draws(lm4, `(Intercept)`, polhs)
+
+fig14 <- ggplot(dsp, aes(x = polsoc, y = polhs)) +
+  labs(x = "Polarization", y = "Hate Speech") +
+  geom_point() +
+  geom_abline(data = draws4, aes(intercept = `(Intercept)`, slope = polhs),    
+              size = 0.2, alpha = 0.1, color = "red") +  
+  geom_abline(intercept = model_intercept4, slope = model_slope4)
+fig14
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# compare both models
+loo3 <- loo(lm3)
+loo4 <- loo(lm4)
+loo_compare(loo3, loo4)
+#lm4 is the better model due to factorization by country
+```
+
+Societal Polarization and Government Disinformation
+
+```{r results='hide'}
+lm5 <- stan_glm(polsoc ~ disgov, dsp, family = gaussian)
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# Societal Polarization and Government Disinformation move in different direction but my very little margin
+summary(lm5)
+
+tidy_coef <- tidy(lm5)
+model_intercept5 <- tidy_coef$estimate[1]
+model_slope5 <- tidy_coef$estimate[2]
+draws5 <- spread_draws(lm5, `(Intercept)`, disgov)
+
+fig15 <- ggplot(dsp, aes(x = polsoc, y = disgov)) +
+  labs(x = "Polarization", y = "Government Disinformation") +
+  geom_point() +
+  geom_abline(data = draws5, aes(intercept = `(Intercept)`, slope = disgov),    
+              size = 0.2, alpha = 0.1, color = "red") +  
+  geom_abline(intercept = model_intercept5, slope = model_slope5)
+fig15
+```
+
+```{r results='hide'}
+lm6 <- stan_glm(polsoc ~ disgov + factor(country), dsp, family = gaussian)
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+summary(lm6)
+
+tidy_coef <- tidy(lm6)
+model_intercept6 <- tidy_coef$estimate[1]
+model_slope6 <- tidy_coef$estimate[2]
+draws6 <- spread_draws(lm6, `(Intercept)`, disgov)
+
+fig16 <- ggplot(dsp, aes(x = polsoc, y = disgov)) +
+  labs(x = "Polarization", y = "Government Disinformation") +
+  geom_point() +
+  geom_abline(data = draws6, aes(intercept = `(Intercept)`, slope = disgov),    
+              size = 0.2, alpha = 0.1, color = "red") +  
+  geom_abline(intercept = model_intercept6, slope = model_slope6)
+fig16
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# compare both models
+loo5 <- loo(lm5)
+loo6 <- loo(lm6)
+loo_compare(loo5, loo6)
+# lm6 is the better model due to factorization by country 
+```
+
+Societal Polarization and Party Disinformation
+
+```{r results='hide'}
+lm7 <- stan_glm(polsoc ~ disparty, dsp, family = gaussian)
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# Societal Polarization and Party Disinformation move in different direction but my very little margin
+summary(lm7)
+
+tidy_coef <- tidy(lm7)
+model_intercept7 <- tidy_coef$estimate[1]
+model_slope7 <- tidy_coef$estimate[2]
+draws7 <- spread_draws(lm7, `(Intercept)`, disparty)
+
+fig17 <- ggplot(dsp, aes(x = polsoc, y = disparty)) +
+  labs(x = "Polarization", y = "Party Disinformation") +
+  geom_point() +
+  geom_abline(data = draws7, aes(intercept = `(Intercept)`, slope = disparty),    
+              size = 0.2, alpha = 0.1, color = "red") +  
+  geom_abline(intercept = model_intercept7, slope = model_slope7)
+fig17
+```
+
+```{r results='hide'}
+lm8 <- stan_glm(polsoc ~ disparty + factor(country), dsp, family = gaussian)
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+summary(lm8)
+
+tidy_coef <- tidy(lm8)
+model_intercept8 <- tidy_coef$estimate[1]
+model_slope8 <- tidy_coef$estimate[2]
+draws8 <- spread_draws(lm8, `(Intercept)`, disparty)
+
+fig18 <- ggplot(dsp, aes(x = polsoc, y = disparty)) +
+  labs(x = "Polarization", y = "Party Disinformation") +
+  geom_point() +
+  geom_abline(data = draws8, aes(intercept = `(Intercept)`, slope = disparty),    
+              size = 0.2, alpha = 0.1, color = "red") +  
+  geom_abline(intercept = model_intercept8, slope = model_slope8)
+fig18
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# compare both models 
+loo7 <- loo(lm7)
+loo8 <- loo(lm8)
+loo_compare(loo7, loo8)
+# lm8 is better due to country factor
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# comparing better models 
+loo_compare(loo4, loo6, loo8)
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+models <- list(lm4, lm6, lm8)
+modelsummary(models, statistic = "conf.int", metrics = "all")
+```
+
+```{r results='hide'}
+lm9 <- stan_glm(polsoc ~ polhs + disgov + disparty, dsp, family = gaussian)
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+summary(lm9)
+```
+
+```{r results='hide'}
+lm10 <- stan_glm(polsoc ~ polhs + disgov + disparty + factor(country), dsp, family = gaussian)
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+summary(lm10)
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# compare both models
+loo9 <- loo(lm9)
+loo10 <- loo(lm10)
+loo_compare(loo9, loo10)
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# compare best models 
+loo_compare(loo4, loo6, loo10)
+```
+
+Bayesian Prediction for Best Model (predicing for lm4 and lm6) - predictor percentage goes down when uncertainty is added
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# point predictor for lm4
+new <- data.frame(polhs=2.0)
+
+a_hat <- coef(lm4)[1]
+b_hat <- coef(lm4)[2]
+y_point_pred <- a_hat + b_hat*new
+y_point_pred
+
+# linear predictor with uncertainly for lm4
+sims <- as.matrix(lm4)
+a <- sims[,1]
+b <- sims[,2]
+y_linpred <- a + b*new
+y_linpred
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+# point predictor for lm6
+new1 <- data.frame(disgov=2.0)
+
+a_hat1 <- coef(lm6)[1]
+b_hat1 <- coef(lm6)[2]
+y_point_pred1 <- a_hat1 + b_hat1*new1
+y_point_pred1
+
+# linear precitor with uncertainty for lm6
+sims1 <- as.matrix(lm6)
+a1 <- sims1[,1]
+b1 <- sims1[,2]
+y_linpred1 <- a1 + b1*new1
+y_linpred1
+```
+
+```{r message=FALSE, warning=FALSE, error=FALSE}
+merge(y_point_pred, y_linpred, by = NULL)
+merge(y_point_pred1, y_linpred1, by = NULL)
+```
