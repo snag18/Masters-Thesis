@@ -1,5 +1,5 @@
 # Masters-Thesis
-the data science and quantitative analysis for the Masters Thesis;
+the data science and quantitative analysis for the Masters Thesis on Online Disinformation;
 
 this 75-page thesis was written as part of the QMSS degree as a required graduation component;
 
