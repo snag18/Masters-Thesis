@@ -7,7 +7,7 @@ Grade: A / 4.00;
 
 mainly using Bayesian Regression and Predictive Modelling;
 
-dataset used: V-Dem;
+dataset used: V-Dem and V-Dem DSP;
 
 a social science problem was translated to a quantitative model giving numerical outcomes and policy recommendations
 
